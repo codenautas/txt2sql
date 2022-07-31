@@ -1,0 +1,13 @@
+{
+    "name": "txt2sql-tools",
+    "version": "0.0.1",
+    "description": "internal tools for txt2sql",
+    "dependencies": {
+        "multilang": "^1.2.0"
+    },
+    "scripts": {
+        "start": "npm run multilang",
+        "multilang2": "cd .. && multilang LEEME.md && cd tools || cd tools",
+        "multilang": "multilang ../LEEME.md"
+    }
+}

@@ -1,0 +1,19 @@
+{
+    "name": "txt-to-sql",
+    "description": "txt-to-sql 2.0",
+    "version": "2.0.0",
+    "private": true,
+    "private-why": "it is marked as private to not publish in npm for now",
+    "dependencies": {
+        "typescript": "^4.7.4"
+    },
+    "devDependencies": {
+        "@types/node": "^18.6.0",
+        "@types/mocha": "^9.1.1",
+        "mocha": "^10.0.0"
+    },
+    "scripts": {
+        "prepare": "tsc -p src",
+        "test": "tsc -p test && mocha build-test/test/test*.js"
+    }
+}

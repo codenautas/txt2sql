@@ -1,0 +1,15 @@
+{
+    "compilerOptions": {
+        "outDir": "x:/\\not exists",
+        "alwaysStrict": true,
+        "declaration": true,
+        "lib": ["ES2022"],
+        "module": "UMD",
+        "noImplicitAny": true,
+        "strict": true,
+        "strictFunctionTypes": true,
+        "strictNullChecks": true,
+        "strictPropertyInitialization": true,
+        "noStrictGenericChecks": true
+    }
+}
