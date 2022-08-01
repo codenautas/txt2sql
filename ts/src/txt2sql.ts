@@ -1,3 +1,5 @@
+import {promises as fs} from 'fs';
+
 export var lineSeparator = '\n'
 
 export var EOT = Symbol('EOT')
@@ -49,4 +51,37 @@ export class Txt2Sql{
             )
         }
     }
+    async processSmallFile(fileName:string){
+        var fh = await fs.open(fileName)
+        var content = await fh.readFile('utf-8');
+        for(var line of content.split(/\r?\n/)){
+            this.processLine(line);
+        }
+        this.processLine(EOT);
+    }
+    static createChunkWriter(fileName:string){
+        var chunks = [] as string[];
+        return function chunkReader(chunk:string|typeof EOT){
+            if(chunk === EOT){
+                fs.writeFile(fileName, chunks.join('\n'));
+            }else if(typeof chunk === "symbol"){
+                console.log("unknown symbol", chunk)
+                throw new Error("unkown symbol");
+            }else{
+                chunks.push(chunk);
+            }
+        }
+    }
+}
+
+if(process.argv.length>2){
+    var reExt = /\.\w+$/;
+    var fileName = process.argv[2];
+    if(!fileName.match(reExt)){
+        throw new Error("filename must has an extension")
+    }
+    var inserts = Txt2Sql.createChunkWriter(fileName.replace(reExt, '-inserts-local.sql'))
+    var createTable = Txt2Sql.createChunkWriter(fileName.replace(reExt, '-create-table-local.sql'))
+    var txt2sql = new Txt2Sql({inserts, createTable});
+    txt2sql.processSmallFile(fileName);
 }

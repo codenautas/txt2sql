@@ -28,7 +28,6 @@ describe("main txt2sql", function(){
             txt2sql.processLine(line)
         }
         txt2sql.processLine(EOT)
-        console.log('aca 2');
         assert.deepEqual(
             createTable(READ_CONTENT4DEBUG),
             [
