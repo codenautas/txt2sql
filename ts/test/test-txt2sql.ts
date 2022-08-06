@@ -1,48 +1,57 @@
-import { ChunkReader, Txt2Sql, EOT } from '../src/txt2sql'
+import { OutWritter, OutWritterFactory, Txt2Sql } from '../src/txt2sql'
 
 import * as assert from 'assert/strict'
 
-var READ_CONTENT4DEBUG = Symbol("READ_CONTENT4DEBUG")
+const EOT = 'END OF TASK';
 
-function createChunkReader():ChunkReader{
-    var chunks:(string|typeof EOT )[] = [];
-    return function chunkReader(chunk:string | typeof EOT | typeof READ_CONTENT4DEBUG){
-        if(chunk === READ_CONTENT4DEBUG){
-            return chunks;
-        }
-        chunks.push(chunk)
+class ArrayWritter implements OutWritter{
+    constructor(public array:(string|typeof EOT)[]){}
+    async write(paragraph:string){
+        this.array.push(paragraph)
+    }
+    async close(){
+        this.array.push(EOT);
     }
 }
+class ArrayFactory implements OutWritterFactory{
+    public arrays:Record<string, (string|typeof EOT)[]> = {}
+    async open(fileName:string){
+        this.arrays[fileName] = []
+        return new ArrayWritter(this.arrays[fileName]);
+    }
+    // eslint-disable-next-line @typescript-eslint/no-empty-function
+    async end(){}
+}
+
 
 describe("main txt2sql", function(){
     it("process simple table", async function(){
-        var inserts = createChunkReader()
-        var createTable = createChunkReader()
-        var inputLines = [
+        const arrayFactory = new ArrayFactory();
+        const inputLines = [
             "column1|column 2",
             "data11|data12",
             "data21|O'Donnell",
         ];
-        var txt2sql = new Txt2Sql({inserts, createTable});
-        for(var line of inputLines){
-            txt2sql.processLine(line)
+        const txt2sql = new Txt2Sql(arrayFactory);
+        await txt2sql.processStart();
+        for(const line of inputLines){
+            // eslint-disable-next-line no-await-in-loop
+            await txt2sql.processLine(line)
         }
-        txt2sql.processLine(EOT)
+        await txt2sql.processEnd();
         assert.deepEqual(
-            createTable(READ_CONTENT4DEBUG),
-            [
-                "create table table1 (\n column1 text,\n column_2 text\n);",
-                EOT
-            ]
-        );
-        assert.deepEqual(
-            inserts(READ_CONTENT4DEBUG),
-            [
-                "insert into table1 (column1, column_2) values ('data11', 'data12');",
-                "insert into table1 (column1, column_2) values ('data21', 'O''Donnell');",
-                EOT
-            ]
-
+            arrayFactory.arrays,
+            {
+                create_table: [
+                    "create table table1 (\n column1 text,\n column_2 text\n);",
+                    EOT
+                ],
+                inserts: [
+                    "insert into table1 (column1, column_2) values ('data11', 'data12');",
+                    "insert into table1 (column1, column_2) values ('data21', 'O''Donnell');",
+                    EOT
+                ]
+            }
         );
     });
 })
