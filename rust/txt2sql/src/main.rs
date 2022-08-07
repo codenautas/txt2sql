@@ -1,7 +1,7 @@
-use std::path::Path;
 use std::fs::File;
 use std::io::{prelude::*, Write, BufReader};
 use std::fmt::{Debug, Formatter, Result};
+use std::path::{Path, PathBuf};
 
 trait OutWritter {
     fn write(&mut self, paragraph: &str) -> ();
@@ -27,17 +27,18 @@ impl OutWritter for FileWritter {
 }
 
 struct FileWritterFactory<'a>{
-    extension: &'a str
+    extension: &'a str,
+    base_dir: &'a str
 }
 
 impl<'a> OutWritterFactory<FileWritter> for FileWritterFactory<'a> {
     fn open(&mut self, file_name: &str) -> FileWritter {
-        /*
-        if(!Path.extname(file_name)){
-            file_name += this.extension;
+        let mut path: PathBuf = [self.base_dir, file_name].iter().collect();
+        // let mut path = PathBuf::from(file_name);
+        if path.extension() == None {
+            path = path.with_extension(self.extension);
         }
-         */
-        let f = File::create(file_name).expect("Unable to create file");
+        let f = File::create(&path).unwrap_or_else( |_| panic!("Unable to create file '{}'", path.display()) );
         FileWritter{
             file: f
             // bufw: BufWriter::new(f)
@@ -142,8 +143,8 @@ fn lines_from_file(file_name: impl AsRef<Path>) -> Vec<String> {
         .collect()
 }
 
-fn process_small_file(file_name: &str){
-    let mut fwf = FileWritterFactory{ extension: ".sql" };
+fn process_small_file(file_name: &str, base_dir: &str){
+    let mut fwf = FileWritterFactory{ extension: "sql", base_dir: base_dir };
     let lines = lines_from_file(file_name);
     let mut t2s = Txt2Sql::init();
     t2s.process_start(&mut fwf);
@@ -155,7 +156,7 @@ fn process_small_file(file_name: &str){
 
 fn main() {
     println!("Hello, world!");
-    process_small_file("../../sandbox/example.tab");
+    process_small_file("../../sandbox/example.tab", "target/tmp");
 }
 
 /*
