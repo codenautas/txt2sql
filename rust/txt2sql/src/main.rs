@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io::{prelude::*, Write, BufReader};
 use std::fmt::{Debug, Formatter, Result};
 use std::path::{Path, PathBuf};
-
+use regex::Regex;
 trait OutWritter {
     fn write(&mut self, paragraph: &str) -> ();
     fn close(&mut self) -> (); // no more writes/closes allowed
@@ -15,7 +15,6 @@ trait OutWritterFactory<T: OutWritter> {
 
 struct FileWritter {
     file: File
-    // bufw: BufWriter
 }
 
 impl OutWritter for FileWritter {
@@ -34,14 +33,12 @@ struct FileWritterFactory<'a>{
 impl<'a> OutWritterFactory<FileWritter> for FileWritterFactory<'a> {
     fn open(&mut self, file_name: &str) -> FileWritter {
         let mut path: PathBuf = [self.base_dir, file_name].iter().collect();
-        // let mut path = PathBuf::from(file_name);
         if path.extension() == None {
             path = path.with_extension(self.extension);
         }
         let f = File::create(&path).unwrap_or_else( |_| panic!("Unable to create file '{}'", path.display()) );
         FileWritter{
             file: f
-            // bufw: BufWriter::new(f)
         }
     }
     fn end(&mut self){}
@@ -50,7 +47,7 @@ impl<'a> OutWritterFactory<FileWritter> for FileWritterFactory<'a> {
 enum Txt2SqlPart { Body, Head }
 
 struct Txt2SqlOpenedMembers<'a, T: OutWritter> {
-    columns: Vec<&'a str>,
+    columns: Vec<String>,
     owf: &'a mut dyn OutWritterFactory<T>,
     inserts: T,
     create_table: T,
@@ -83,8 +80,6 @@ struct Txt2Sql<'a, T: OutWritter>{
     status: Txt2SqlStatus<'a, T>,
 }
 
-// + Debug parece innesesario porque ya definí cómo implementar Debug en un OutWritter. 
-
 impl<'a, T: OutWritter + Debug> Txt2Sql<'a, T> {
     fn init() -> Self{
         Self{
@@ -110,12 +105,32 @@ impl<'a, T: OutWritter + Debug> Txt2Sql<'a, T> {
             Txt2SqlStatus::Started(this) => {
                 match this.part {
                     Txt2SqlPart::Head => {
-                        this.create_table.write(line);
+                        let re = Regex::new(r"\W").unwrap();
+                        this.columns = line.split('|').map(|column| re.replace_all(column, "_").into_owned()).collect();
+                        this.create_table.write(
+                            format!(
+                                "create table {} (\n{}\n);", 
+                                "table1",
+                                this.columns.iter().map(
+                                    |column| format!(" {} text", column)
+                                ).collect::<Vec<String>>().join(",\n")
+                            ).as_str()
+                        );
                         this.create_table.close();
                         this.part = Txt2SqlPart::Body;
                     }
                     Txt2SqlPart::Body => {
-                        this.inserts.write(line);
+                        let reg_exp_quote_values = Regex::new(r"'").unwrap();
+                        this.inserts.write(
+                            format!(
+                                "insert into {} ({}) values ({});\n", 
+                                "table1",
+                                this.columns.join(", "),
+                                line.split('|').map(
+                                    |value| format!("'{}'", reg_exp_quote_values.replace_all(value, "''").into_owned())
+                                ).collect::<Vec<String>>().join(", ")
+                            ).as_str()
+                        );
                     }
                 }
             }
