@@ -1,9 +1,8 @@
-
+use regex::Regex;
+use std::fmt::{Debug, Formatter, Result};
 use std::fs::File;
 use std::io::{prelude::*, Write, BufReader};
-use std::fmt::{Debug, Formatter, Result};
 use std::path::{Path, PathBuf};
-use regex::Regex;
 trait OutWritter {
     fn write(&mut self, paragraph: &str) -> ();
     fn close(&mut self) -> (); // no more writes/closes allowed
@@ -173,40 +172,42 @@ pub fn process_small_file(file_name: &str, base_dir: &str){
 
 mod tests {
     use super::*;
-
+    
+    use std::cell::{RefCell};
     use std::collections::HashMap;
+    use std::rc::Rc;
 
     struct VecWritter {
-        vec: Vec<String>
+        vec: Rc<RefCell<Vec<String>>>
     }
     
     impl OutWritter for VecWritter {
         fn write(&mut self, paragraph: &str){
-            self.vec.push(String::from(paragraph));
+            self.vec.borrow_mut().push(String::from(paragraph));
         }
         fn close(&mut self){
         }
     }
     
     struct VecWritterFactory{
-        openeds: HashMap<String, bool>
+        vecs: HashMap<String, Rc<RefCell<Vec<String>>>>        
     }
     
     impl VecWritterFactory{
         fn init() -> Self {
             Self {
-                openeds: HashMap::new()
+                vecs: HashMap::new()
             }
         }
     }
     
-    // impl<'a> OutWritterFactory<VecWritter> for VecWritterFactory<'a> {
     impl OutWritterFactory<VecWritter> for VecWritterFactory {    
         fn open(&mut self, file_name: &str) -> VecWritter {
-            let v = Vec::new();
-            self.openeds.insert(file_name.to_string(), true);
+            let key = file_name.to_string();
+            let vec: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
+            self.vecs.insert(key, Rc::clone(&vec));
             VecWritter{
-                vec: v
+                vec: Rc::clone(&vec)
             }
         }
         fn end(&mut self){}
@@ -225,10 +226,19 @@ mod tests {
 
         let mut txt2sql = Txt2Sql::init();
         txt2sql.process_start(&mut vwf);
-        txt2sql.process_line("first|line");
-        txt2sql.process_line("second|line");
-        txt2sql.process_line("third|line");
+        txt2sql.process_line("column1|column 2");
+        txt2sql.process_line("data11|data12");
+        txt2sql.process_line("data21|O'Donnell");
         txt2sql.process_end();
-        // assert_eq!(txt2sql.columns, vec!["first line", "----------", "second line", "third line"]);
+        let mut keys = vwf.vecs.keys().collect::<Vec<&String>>();
+        keys.sort_unstable();
+        assert_eq!(keys, ["create_table", "inserts"]);
+        assert_eq!(vwf.vecs.get("create_table").expect("create_table.sql").borrow().to_vec(), [
+            "create table table1 (\n column1 text,\n column_2 text\n);"
+        ]);
+        assert_eq!(vwf.vecs.get("inserts").expect("inserts.sql").borrow().to_vec(), [
+            "insert into table1 (column1, column_2) values ('data11', 'data12');\n",
+            "insert into table1 (column1, column_2) values ('data21', 'O''Donnell');\n"
+        ]);
     }
 }
