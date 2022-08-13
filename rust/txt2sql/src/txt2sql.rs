@@ -3,6 +3,11 @@ use std::fmt::{Debug, Formatter, Result};
 use std::fs::File;
 use std::io::{prelude::*, Write, BufReader};
 use std::path::{Path, PathBuf};
+
+struct Txt2SqlOptions<'a> {
+    field_separator: &'a str
+}
+
 trait OutWritter {
     fn write(&mut self, paragraph: &str) -> ();
     fn close(&mut self) -> (); // no more writes/closes allowed
@@ -19,9 +24,16 @@ struct FileWritter {
 
 impl OutWritter for FileWritter {
     fn write(&mut self, paragraph: &str){
-        write!(self.file, "{}", paragraph).expect("cannot write");
+        self.file.write(paragraph.as_bytes()).expect("cannot write");
+        /*
+        match Some(self.file) {
+            Some(opened_file) => { opened_file.write(paragraph.as_bytes()).expect("cannot write"); }
+            None => panic!("file is no longer opened")
+        }
+        */
     }
     fn close(&mut self){
+        // self.file = None;
     }
 }
 
@@ -46,15 +58,14 @@ impl<'a> OutWritterFactory<FileWritter> for FileWritterFactory<'a> {
 
 enum Txt2SqlPart { Body, Head }
 
-struct Txt2SqlOpenedMembers<'a, T: OutWritter> {
+struct Txt2SqlOpenedMembers<T: OutWritter> {
     columns: Vec<String>,
-    owf: &'a mut dyn OutWritterFactory<T>,
     inserts: T,
     create_table: T,
     part: Txt2SqlPart
 }
 
-impl<T: OutWritter> Debug for Txt2SqlOpenedMembers<'_, T> {
+impl<T: OutWritter> Debug for Txt2SqlOpenedMembers<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         f.debug_struct("Txt2SqlOpenedMembers").finish()
     }
@@ -74,26 +85,29 @@ impl Debug for FileWritter {
 }
 
 #[derive(Debug)]
-enum Txt2SqlStatus<'a, T: OutWritter> { New, Started(Txt2SqlOpenedMembers<'a, T>), Done }
+enum Txt2SqlStatus<T: OutWritter> { New, Started(Txt2SqlOpenedMembers<T>), Done }
 
 struct Txt2Sql<'a, T: OutWritter>{
-    status: Txt2SqlStatus<'a, T>,
+    status: Txt2SqlStatus<T>,
+    owf: &'a mut dyn OutWritterFactory<T>,
+    options: Txt2SqlOptions<'a>
 }
 
 impl<'a, T: OutWritter + Debug> Txt2Sql<'a, T> {
-    fn init() -> Self{
+    fn init(owf: &'a mut dyn OutWritterFactory<T>, options:Txt2SqlOptions<'a>) -> Self{
         Self{
-            status: Txt2SqlStatus::New
+            status: Txt2SqlStatus::New,
+            options: options,
+            owf: owf
         }
     }
-    fn process_start(&mut self, owf: &'a mut dyn OutWritterFactory<T>){
+    fn process_start(&mut self){
         match self.status {
             Txt2SqlStatus::New => {
                 self.status = Txt2SqlStatus::Started(Txt2SqlOpenedMembers{
                     columns: Vec::new(),
-                    create_table: owf.open("create_table"),
-                    inserts: owf.open("inserts"),
-                    owf: owf,
+                    create_table: self.owf.open("create_table"),
+                    inserts: self.owf.open("inserts"),
                     part: Txt2SqlPart::Head                  
                 });
             }
@@ -106,7 +120,7 @@ impl<'a, T: OutWritter + Debug> Txt2Sql<'a, T> {
                 match this.part {
                     Txt2SqlPart::Head => {
                         let re = Regex::new(r"\W").unwrap();
-                        this.columns = line.split('|').map(|column| re.replace_all(column, "_").into_owned()).collect();
+                        this.columns = line.split(self.options.field_separator).map(|column| re.replace_all(column, "_").into_owned()).collect();
                         this.create_table.write(
                             format!(
                                 "create table {} (\n{}\n);", 
@@ -126,7 +140,7 @@ impl<'a, T: OutWritter + Debug> Txt2Sql<'a, T> {
                                 "insert into {} ({}) values ({});\n", 
                                 "table1",
                                 this.columns.join(", "),
-                                line.split('|').map(
+                                line.split(self.options.field_separator).map(
                                     |value| format!("'{}'", reg_exp_quote_values.replace_all(value, "''").into_owned())
                                 ).collect::<Vec<String>>().join(", ")
                             ).as_str()
@@ -141,7 +155,7 @@ impl<'a, T: OutWritter + Debug> Txt2Sql<'a, T> {
         match &mut self.status {
             Txt2SqlStatus::Started(this) => {
                 this.inserts.close();
-                this.owf.end();
+                self.owf.end();
                 self.status = Txt2SqlStatus::Done;
             }
             _ => panic!("wrong state at process_line: {:#?}", self.status)
@@ -161,8 +175,8 @@ fn lines_from_file(file_name: impl AsRef<Path>) -> Vec<String> {
 pub fn process_small_file(file_name: &str, base_dir: &str){
     let mut fwf = FileWritterFactory{ extension: "sql", base_dir: base_dir };
     let lines = lines_from_file(file_name);
-    let mut t2s = Txt2Sql::init();
-    t2s.process_start(&mut fwf);
+    let mut t2s = Txt2Sql::init(&mut fwf, Txt2SqlOptions { field_separator: "|" });
+    t2s.process_start();
     for line in lines {
         t2s.process_line(&line);
     }
@@ -224,8 +238,8 @@ mod tests {
     fn it_works() {
         let mut vwf = VecWritterFactory::init();
 
-        let mut txt2sql = Txt2Sql::init();
-        txt2sql.process_start(&mut vwf);
+        let mut txt2sql = Txt2Sql::init(&mut vwf, Txt2SqlOptions { field_separator: "|" });
+        txt2sql.process_start();
         txt2sql.process_line("column1|column 2");
         txt2sql.process_line("data11|data12");
         txt2sql.process_line("data21|O'Donnell");
