@@ -19,21 +19,18 @@ trait OutWritterFactory<T: OutWritter> {
 }
 
 struct FileWritter {
-    file: File
+    file: Option<File>
 }
 
 impl OutWritter for FileWritter {
     fn write(&mut self, paragraph: &str){
-        self.file.write(paragraph.as_bytes()).expect("cannot write");
-        /*
-        match Some(self.file) {
-            Some(opened_file) => { opened_file.write(paragraph.as_bytes()).expect("cannot write"); }
+        match self.file {
+            Some(ref mut opened_file) => { opened_file.write(paragraph.as_bytes()).expect("cannot write"); }
             None => panic!("file is no longer opened")
         }
-        */
     }
     fn close(&mut self){
-        // self.file = None;
+        self.file = None;
     }
 }
 
@@ -50,7 +47,7 @@ impl<'a> OutWritterFactory<FileWritter> for FileWritterFactory<'a> {
         }
         let f = File::create(&path).unwrap_or_else( |_| panic!("Unable to create file '{}'", path.display()) );
         FileWritter{
-            file: f
+            file: Some(f)
         }
     }
     fn end(&mut self){}
@@ -111,7 +108,7 @@ impl<'a, T: OutWritter + Debug> Txt2Sql<'a, T> {
                     part: Txt2SqlPart::Head                  
                 });
             }
-            _ => panic!("wrong state at process_line: {:#?}", self.status)
+            _ => panic!("wrong status at process_start: {:#?}", self.status)
         }
     }
     fn process_line(&mut self, line: &str){
@@ -148,7 +145,7 @@ impl<'a, T: OutWritter + Debug> Txt2Sql<'a, T> {
                     }
                 }
             }
-            _ => panic!("wrong state at process_line: {:#?}", self.status)
+            _ => panic!("wrong status at process_line: {:#?}", self.status)
         }
     }
     fn process_end(&mut self){
@@ -158,7 +155,7 @@ impl<'a, T: OutWritter + Debug> Txt2Sql<'a, T> {
                 self.owf.end();
                 self.status = Txt2SqlStatus::Done;
             }
-            _ => panic!("wrong state at process_line: {:#?}", self.status)
+            _ => panic!("wrong status at process_end: {:#?}", self.status)
         }
     }
 }
