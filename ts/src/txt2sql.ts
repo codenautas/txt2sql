@@ -1,16 +1,13 @@
 import {promises as fs} from 'fs';
 import * as Path from 'path';
-
-export const lineSeparator = '\n'
+import { ReadableStreamBYOBReader } from 'stream/web';
 
 export type Txt2SqlOptions = {
     fieldSeparator: '|' | ',' | ';' | '\t' | '...'
-    lineSeparator: '\n' | '\r\n' | '\r' | '...'
-    inferTypes: boolean
 }
 
 export const txt2sqlOption = {
-    bp_tab: { fieldSeparator: '|', lineSeparator } as Txt2SqlOptions
+    bp_tab: { fieldSeparator: '|'  } as Txt2SqlOptions
 }
 
 export interface OutWritter {
@@ -48,52 +45,76 @@ export class FileWritterFactory implements OutWritterFactory{
 const fileNames = ['inserts', 'create_table'] as
                   ('inserts'| 'create_table')[];
 
-enum States { New, Started, Processing, Ended }
+enum Part { Body, Head }
+
+type Txt2SqlOpenedMembers = {
+    columns: string[]
+    inserts: OutWritter
+    create_table: OutWritter
+    part: Part
+}
+
+enum Status { New, Started, Done }
+
+type Txt2SqlStatus = { is: Status.New | Status.Done } | { is: Status.Started } & Txt2SqlOpenedMembers
 
 export class Txt2Sql{
-    private state: States = States.New
-    private columns = [] as string[]
-    private writter = {} as Record<typeof fileNames[0], OutWritter>
-    constructor(private fileWritterFactory: OutWritterFactory, public options:Txt2SqlOptions = txt2sqlOption.bp_tab){
+    private status: Txt2SqlStatus = { is: Status.New }
+    constructor(private owf: OutWritterFactory, public options:Txt2SqlOptions = txt2sqlOption.bp_tab){
     }
-    expectState(states:States[]){
-        if(states.filter(s => s == this.state).length == 0){
-            throw new Error("expected states "+states.map(s => States[s]) + " but was " + States[this.state]);
+    expectStatus(status:Status){
+        if(status != this.status.is){
+            throw new Error("expected status " + Status[status] + " but was " + Status[this.status.is]);
         }
+        return true;
     }
     async processStart(){
-        this.expectState([States.New]);
-        for(const fileName of fileNames){
-            // eslint-disable-next-line no-await-in-loop
-            this.writter[fileName] = await this.fileWritterFactory.open(fileName);
+        /*
+        switch(this.status.is){
+            case Status.
         }
-        this.state = States.Started;
+        */
+        this.status = {
+            is: Status.Started,
+            columns: [],
+            create_table: await this.owf.open('create_table'),
+            inserts: await this.owf.open('inserts'),
+            part: Part.Head
+        }
     }
     async processLine(line:string){
-        this.expectState([States.Started, States.Processing]);
-        if(this.state == States.Started){
-            this.columns = line.split(this.options.fieldSeparator).map(name=>name.replace(/\W/g,'_'));
-            await this.writter.create_table?.write(
-                "create table table1 (" + 
-                this.columns.map(x=>"\n " + x + " text").join(",") + 
-                "\n);"
-            );
-            await this.writter.create_table?.close();
-            this.state = States.Processing;
-        }else{
-            await this.writter.inserts?.write(
-                "insert into table1 (" + 
-                this.columns.join(", ") + 
-                ") values ('" + 
-                line.split(this.options.fieldSeparator).map(value=>value.replace(/'/g, "''")).join("', '") + 
-                "');"
-            )
+        switch(this.status.is){
+            case Status.Started:
+                if(this.status.part == Part.Head){
+                    this.status.columns = line.split(this.options.fieldSeparator).map(name=>name.replace(/\W/g,'_'));
+                    await this.status.create_table.write(
+                        "create table table1 (" + 
+                        this.status.columns.map(x=>"\n " + x + " text").join(",") + 
+                        "\n);"
+                    );
+                    await this.status.create_table.close();
+                    this.status.part = Part.Body;
+                }else{
+                    await this.status.inserts?.write(
+                        "insert into table1 (" + 
+                        this.status.columns.join(", ") + 
+                        ") values ('" + 
+                        line.split(this.options.fieldSeparator).map(value=>value.replace(/'/g, "''")).join("', '") + 
+                        "');"
+                    )
+                }
+            break;
+            default: throw Error("wrong status at process_end: "+this.status);
         }
     }
     async processEnd(){
-        this.expectState([States.Started, States.Processing]);
-        await this.writter.inserts?.close();
-        this.state = States.Ended;
+        switch(this.status.is){
+            case Status.Started:
+                await this.status.inserts.close();
+                this.status = {is: Status.Done};
+            break;
+            default: throw Error("wrong status at process_end: "+this.status);
+        }
     }
     async processSmallFile(fileName:string){
         const fh = await fs.open(fileName)
