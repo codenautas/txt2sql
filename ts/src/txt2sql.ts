@@ -1,6 +1,5 @@
 import {promises as fs} from 'fs';
 import * as Path from 'path';
-import { ReadableStreamBYOBReader } from 'stream/web';
 
 export type Txt2SqlOptions = {
     fieldSeparator: '|' | ',' | ';' | '\t' | '...'
@@ -42,9 +41,6 @@ export class FileWritterFactory implements OutWritterFactory{
     async end(){}
 }
 
-const fileNames = ['inserts', 'create_table'] as
-                  ('inserts'| 'create_table')[];
-
 enum Part { Body, Head }
 
 type Txt2SqlOpenedMembers = {
@@ -62,24 +58,18 @@ export class Txt2Sql{
     private status: Txt2SqlStatus = { is: Status.New }
     constructor(private owf: OutWritterFactory, public options:Txt2SqlOptions = txt2sqlOption.bp_tab){
     }
-    expectStatus(status:Status){
-        if(status != this.status.is){
-            throw new Error("expected status " + Status[status] + " but was " + Status[this.status.is]);
-        }
-        return true;
-    }
     async processStart(){
-        /*
         switch(this.status.is){
-            case Status.
-        }
-        */
-        this.status = {
-            is: Status.Started,
-            columns: [],
-            create_table: await this.owf.open('create_table'),
-            inserts: await this.owf.open('inserts'),
-            part: Part.Head
+            case Status.New:
+                this.status = {
+                    is: Status.Started,
+                    columns: [],
+                    create_table: await this.owf.open('create_table'),
+                    inserts: await this.owf.open('inserts'),
+                    part: Part.Head
+                }
+            break;
+            default: throw Error("wrong status at process_end: "+this.status);
         }
     }
     async processLine(line:string){

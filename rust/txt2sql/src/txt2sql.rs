@@ -180,7 +180,7 @@ pub fn process_small_file(file_name: &str, base_dir: &str){
     t2s.process_end();
 }
 
-
+#[cfg(test)]
 mod tests {
     use super::*;
     
