@@ -1,20 +1,34 @@
-use regex::Regex;
 use std::fmt::{Debug, Formatter, Result};
 use std::fs::File;
 use std::io::{prelude::*, Write, BufReader};
 use std::path::{Path, PathBuf};
+use regex::Regex;
+use serde::{Serialize, Deserialize};
 
-struct Txt2SqlOptions<'a> {
-    field_separator: &'a str
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Txt2SqlOptions {
+    #[serde(default)]
+    field_separator: String,
+    #[serde(default)]
+    table_name: String
 }
 
-trait OutWritter {
+impl Default for Txt2SqlOptions {
+    fn default() -> Self { Self { 
+        field_separator: "|".to_string(), 
+        table_name: "table1".to_string()
+    } }
+}
+
+// fn txt2sql_default_field_separator() -> &'static str { "|"}
+
+pub trait OutWritter {
     fn write(&mut self, paragraph: &str) -> ();
     fn close(&mut self) -> (); // no more writes/closes allowed
 }
 
-trait OutWritterFactory<T: OutWritter> {
-    fn open(&mut self, file_name: &str) -> T;
+pub trait OutWritterFactory {
+    fn open(&mut self, file_name: &str) -> Box<dyn OutWritter>;
     fn end(&mut self) -> (); // no more writes/closes allowed in any opened file
 }
 
@@ -39,30 +53,30 @@ struct FileWritterFactory<'a>{
     base_dir: &'a str
 }
 
-impl<'a> OutWritterFactory<FileWritter> for FileWritterFactory<'a> {
-    fn open(&mut self, file_name: &str) -> FileWritter {
+impl<'a> OutWritterFactory for FileWritterFactory<'a> {
+    fn open(&mut self, file_name: &str) -> Box<dyn OutWritter> {
         let mut path: PathBuf = [self.base_dir, file_name].iter().collect();
         if path.extension() == None {
             path = path.with_extension(self.extension);
         }
         let f = File::create(&path).unwrap_or_else( |_| panic!("Unable to create file '{}'", path.display()) );
-        FileWritter{
+        Box::new(FileWritter{
             file: Some(f)
-        }
+        })
     }
     fn end(&mut self){}
 }
 
 enum Txt2SqlPart { Body, Head }
 
-struct Txt2SqlOpenedMembers<T: OutWritter> {
+struct Txt2SqlOpenedMembers {
     columns: Vec<String>,
-    inserts: T,
-    create_table: T,
+    inserts: Box<dyn OutWritter>,
+    create_table: Box<dyn OutWritter>,
     part: Txt2SqlPart
 }
 
-impl<T: OutWritter> Debug for Txt2SqlOpenedMembers<T> {
+impl Debug for Txt2SqlOpenedMembers {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         f.debug_struct("Txt2SqlOpenedMembers").finish()
     }
@@ -82,23 +96,23 @@ impl Debug for FileWritter {
 }
 
 #[derive(Debug)]
-enum Txt2SqlStatus<T: OutWritter> { New, Started(Txt2SqlOpenedMembers<T>), Done }
+enum Txt2SqlStatus { New, Started(Txt2SqlOpenedMembers), Done }
 
-struct Txt2Sql<'a, T: OutWritter>{
-    status: Txt2SqlStatus<T>,
-    owf: &'a mut dyn OutWritterFactory<T>,
-    options: Txt2SqlOptions<'a>
+pub struct Txt2Sql<'a>{
+    status: Txt2SqlStatus,
+    owf: &'a mut dyn OutWritterFactory,
+    options: Txt2SqlOptions
 }
 
-impl<'a, T: OutWritter + Debug> Txt2Sql<'a, T> {
-    fn init(owf: &'a mut dyn OutWritterFactory<T>, options:Txt2SqlOptions<'a>) -> Self{
+impl<'a> Txt2Sql<'a> {
+    pub fn init(owf: &'a mut dyn OutWritterFactory, options:Txt2SqlOptions) -> Self{
         Self{
             status: Txt2SqlStatus::New,
-            options: options,
-            owf: owf
+            options,
+            owf
         }
     }
-    fn process_start(&mut self){
+    pub fn process_start(&mut self){
         match self.status {
             Txt2SqlStatus::New => {
                 self.status = Txt2SqlStatus::Started(Txt2SqlOpenedMembers{
@@ -111,17 +125,19 @@ impl<'a, T: OutWritter + Debug> Txt2Sql<'a, T> {
             _ => panic!("wrong status at process_start: {:#?}", self.status)
         }
     }
-    fn process_line(&mut self, line: &str){
+    pub fn process_line(&mut self, line: &str){
         match &mut self.status {
             Txt2SqlStatus::Started(this) => {
                 match this.part {
                     Txt2SqlPart::Head => {
                         let re = Regex::new(r"\W").unwrap();
-                        this.columns = line.split(self.options.field_separator).map(|column| re.replace_all(column, "_").into_owned()).collect();
+                        this.columns = line.split(self.options.field_separator.as_str()).map(
+                            |column| re.replace_all(column, "_").to_lowercase()
+                        ).collect();
                         this.create_table.write(
                             format!(
-                                "create table {} (\n{}\n);", 
-                                "table1",
+                                "create table {} (\n{}\n);\n", 
+                                self.options.table_name,
                                 this.columns.iter().map(
                                     |column| format!(" {} text", column)
                                 ).collect::<Vec<String>>().join(",\n")
@@ -135,9 +151,9 @@ impl<'a, T: OutWritter + Debug> Txt2Sql<'a, T> {
                         this.inserts.write(
                             format!(
                                 "insert into {} ({}) values ({});\n", 
-                                "table1",
+                                self.options.table_name,
                                 this.columns.join(", "),
-                                line.split(self.options.field_separator).map(
+                                line.split(self.options.field_separator.as_str()).map(
                                     |value| format!("'{}'", reg_exp_quote_values.replace_all(value, "''").into_owned())
                                 ).collect::<Vec<String>>().join(", ")
                             ).as_str()
@@ -148,7 +164,7 @@ impl<'a, T: OutWritter + Debug> Txt2Sql<'a, T> {
             _ => panic!("wrong status at process_line: {:#?}", self.status)
         }
     }
-    fn process_end(&mut self){
+    pub fn process_end(&mut self){
         match &mut self.status {
             Txt2SqlStatus::Started(this) => {
                 this.inserts.close();
@@ -172,7 +188,7 @@ fn lines_from_file(file_name: impl AsRef<Path>) -> Vec<String> {
 pub fn process_small_file(file_name: &str, base_dir: &str){
     let mut fwf = FileWritterFactory{ extension: "sql", base_dir: base_dir };
     let lines = lines_from_file(file_name);
-    let mut t2s = Txt2Sql::init(&mut fwf, Txt2SqlOptions { field_separator: "|" });
+    let mut t2s = Txt2Sql::init(&mut fwf, Txt2SqlOptions::default());
     t2s.process_start();
     for line in lines {
         t2s.process_line(&line);
@@ -181,63 +197,17 @@ pub fn process_small_file(file_name: &str, base_dir: &str){
 }
 
 #[cfg(test)]
-mod tests {
+mod test {
     use super::*;
-    
-    use std::cell::{RefCell};
-    use std::collections::HashMap;
-    use std::rc::Rc;
-
-    struct VecWritter {
-        vec: Rc<RefCell<Vec<String>>>
-    }
-    
-    impl OutWritter for VecWritter {
-        fn write(&mut self, paragraph: &str){
-            self.vec.borrow_mut().push(String::from(paragraph));
-        }
-        fn close(&mut self){
-        }
-    }
-    
-    struct VecWritterFactory{
-        vecs: HashMap<String, Rc<RefCell<Vec<String>>>>        
-    }
-    
-    impl VecWritterFactory{
-        fn init() -> Self {
-            Self {
-                vecs: HashMap::new()
-            }
-        }
-    }
-    
-    impl OutWritterFactory<VecWritter> for VecWritterFactory {    
-        fn open(&mut self, file_name: &str) -> VecWritter {
-            let key = file_name.to_string();
-            let vec: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
-            self.vecs.insert(key, Rc::clone(&vec));
-            VecWritter{
-                vec: Rc::clone(&vec)
-            }
-        }
-        fn end(&mut self){}
-    }
-    
-    // Parece innecesario porque ya lo hice para OutWritter
-    impl Debug for VecWritter {
-        fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-            f.debug_struct("VecWritter").finish()
-        }
-    }
-    
+    use crate::vecwritter::*;
+        
     #[test]
     fn it_works() {
         let mut vwf = VecWritterFactory::init();
 
-        let mut txt2sql = Txt2Sql::init(&mut vwf, Txt2SqlOptions { field_separator: "|" });
+        let mut txt2sql = Txt2Sql::init(&mut vwf, Txt2SqlOptions::default());
         txt2sql.process_start();
-        txt2sql.process_line("column1|column 2");
+        txt2sql.process_line("column1|Column 2");
         txt2sql.process_line("data11|data12");
         txt2sql.process_line("data21|O'Donnell");
         txt2sql.process_end();
@@ -245,7 +215,7 @@ mod tests {
         keys.sort_unstable();
         assert_eq!(keys, ["create_table", "inserts"]);
         assert_eq!(vwf.vecs.get("create_table").expect("create_table.sql").borrow().to_vec(), [
-            "create table table1 (\n column1 text,\n column_2 text\n);"
+            "create table table1 (\n column1 text,\n column_2 text\n);\n"
         ]);
         assert_eq!(vwf.vecs.get("inserts").expect("inserts.sql").borrow().to_vec(), [
             "insert into table1 (column1, column_2) values ('data11', 'data12');\n",

@@ -1,0 +1,20 @@
+options:
+  field_separator: ","
+  table_name: periodic_table
+input: |-
+  Atomic Number,Symbol,Name,Weight
+  1,H,Hydrogen,1.008
+  2,He,Helium,4.0026
+  3,Li,Lithium,6.94
+outputs:
+  create_table: |
+    create table periodic_table (
+     atomic_number text,
+     symbol text,
+     name text,
+     weight text
+    );
+  inserts: |
+    insert into periodic_table (atomic_number, symbol, name, weight) values ('1', 'H', 'Hydrogen', '1.008');
+    insert into periodic_table (atomic_number, symbol, name, weight) values ('2', 'He', 'Helium', '4.0026');
+    insert into periodic_table (atomic_number, symbol, name, weight) values ('3', 'Li', 'Lithium', '6.94');

@@ -10,7 +10,12 @@ repository = "https://github.com/codenautas/txt2sql"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+derivative = { version = "2.2.0" }
 regex = "1"
+serde = { version = "1.0", features = ["derive"] }
+
+[dev-dependencies]
+serde_yaml = "0.9"
 
 [dependencies.async-std]
 version = "1.6"
