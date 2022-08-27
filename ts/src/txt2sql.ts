@@ -2,11 +2,12 @@ import {promises as fs} from 'fs';
 import * as Path from 'path';
 
 export type Txt2SqlOptions = {
-    fieldSeparator: '|' | ',' | ';' | '\t' | '...'
+    field_separator: '|' | ',' | ';' | '\t' | '...',
+    table_name: string
 }
 
 export const txt2sqlOption = {
-    bp_tab: { fieldSeparator: '|'  } as Txt2SqlOptions
+    bp_tab: { field_separator: '|'  } as Txt2SqlOptions
 }
 
 export interface OutWritter {
@@ -56,7 +57,9 @@ type Txt2SqlStatus = { is: Status.New | Status.Done } | { is: Status.Started } &
 
 export class Txt2Sql{
     private status: Txt2SqlStatus = { is: Status.New }
+    private table_name;
     constructor(private owf: OutWritterFactory, public options:Txt2SqlOptions = txt2sqlOption.bp_tab){
+        this.table_name = this.options.table_name || 'table1';
     }
     async processStart(){
         switch(this.status.is){
@@ -76,21 +79,21 @@ export class Txt2Sql{
         switch(this.status.is){
             case Status.Started:
                 if(this.status.part == Part.Head){
-                    this.status.columns = line.split(this.options.fieldSeparator).map(name=>name.replace(/\W/g,'_'));
+                    this.status.columns = line.split(this.options.field_separator).map(name=>name.replace(/\W/g,'_').toLocaleLowerCase());
                     await this.status.create_table.write(
-                        "create table table1 (" + 
+                        "create table " + this.table_name + " (" + 
                         this.status.columns.map(x=>"\n " + x + " text").join(",") + 
-                        "\n);"
+                        "\n);\n"
                     );
                     await this.status.create_table.close();
                     this.status.part = Part.Body;
                 }else{
                     await this.status.inserts?.write(
-                        "insert into table1 (" + 
+                        "insert into " + this.table_name + " (" + 
                         this.status.columns.join(", ") + 
                         ") values ('" + 
-                        line.split(this.options.fieldSeparator).map(value=>value.replace(/'/g, "''")).join("', '") + 
-                        "');"
+                        line.split(this.options.field_separator).map(value=>value.replace(/'/g, "''")).join("', '") + 
+                        "');\n"
                     )
                 }
             break;
@@ -101,6 +104,7 @@ export class Txt2Sql{
         switch(this.status.is){
             case Status.Started:
                 await this.status.inserts.close();
+                await this.owf.end();
                 this.status = {is: Status.Done};
             break;
             default: throw Error("wrong status at process_end: "+this.status);

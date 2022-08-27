@@ -5,6 +5,7 @@
         "declaration": true,
         "lib": ["ES2022"],
         "module": "UMD",
+        "moduleResolution": "node",
         "noImplicitAny": true,
         "strict": true,
         "strictFunctionTypes": true,

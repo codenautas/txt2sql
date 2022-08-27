@@ -1,5 +1,9 @@
 import { OutWritter, OutWritterFactory, Txt2Sql } from '../src/txt2sql'
 
+import {promises as fs} from 'fs';
+
+import * as YAML from 'yaml';
+
 import * as assert from 'assert/strict'
 
 const EOT = 'END OF TASK';
@@ -23,8 +27,18 @@ class ArrayFactory implements OutWritterFactory{
     async end(){}
 }
 
+class StringFactory extends ArrayFactory{
+    async end(){
+        for(const name in this.arrays){
+            const plain = this.arrays[name].filter(x => x != EOT).join('');
+            // @ts-expect-error converting results to plain strig
+            this.arrays[name] = plain
+        }
+    }
+}
 
-describe("main txt2sql", function(){
+
+describe("txt2sql unit test", function(){
     it("process simple table", async function(){
         const arrayFactory = new ArrayFactory();
         const inputLines = [
@@ -43,15 +57,34 @@ describe("main txt2sql", function(){
             arrayFactory.arrays,
             {
                 create_table: [
-                    "create table table1 (\n column1 text,\n column_2 text\n);",
+                    "create table table1 (\n column1 text,\n column_2 text\n);\n",
                     EOT
                 ],
                 inserts: [
-                    "insert into table1 (column1, column_2) values ('data11', 'data12');",
-                    "insert into table1 (column1, column_2) values ('data21', 'O''Donnell');",
+                    "insert into table1 (column1, column_2) values ('data11', 'data12');\n",
+                    "insert into table1 (column1, column_2) values ('data21', 'O''Donnell');\n",
                     EOT
                 ]
             }
         );
     });
+});
+
+describe("txt2sql integratin tests", function(){
+    it("test simple-data fixture", async function(){
+        const fixtureYaml = await fs.readFile('../fixtures/simple-data.yaml', 'utf8');
+        const fixture = YAML.parse(fixtureYaml);
+        const stringFactory = new StringFactory();
+        const txt2sql = new Txt2Sql(stringFactory, fixture.options);
+        await txt2sql.processStart();
+        for(const line of fixture.input.split(/\r?\n/)){
+            // eslint-disable-next-line no-await-in-loop
+            await txt2sql.processLine(line);
+        }
+        await txt2sql.processEnd();
+        assert.deepEqual(
+            stringFactory.arrays,
+            fixture.outputs
+        );
+    })
 })
