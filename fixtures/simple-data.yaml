@@ -1,6 +1,11 @@
 options:
   field_separator: ","
   table_name: periodic_table
+  fast_definition: true
+  quote_identifiers: ""
+  case: lower
+  insert_columns: false
+  multi_insert: false
 input: |-
   Atomic Number,Symbol,Name,Weight
   1,H,Hydrogen,1.008
@@ -15,6 +20,6 @@ outputs:
      weight text
     );
   inserts: |
-    insert into periodic_table (atomic_number, symbol, name, weight) values ('1', 'H', 'Hydrogen', '1.008');
-    insert into periodic_table (atomic_number, symbol, name, weight) values ('2', 'He', 'Helium', '4.0026');
-    insert into periodic_table (atomic_number, symbol, name, weight) values ('3', 'Li', 'Lithium', '6.94');
+    insert into periodic_table values ('1', 'H', 'Hydrogen', '1.008');
+    insert into periodic_table values ('2', 'He', 'Helium', '4.0026');
+    insert into periodic_table values ('3', 'Li', 'Lithium', '6.94');

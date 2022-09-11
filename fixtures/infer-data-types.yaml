@@ -1,0 +1,29 @@
+options:
+  field_separator: ","
+  table_name: Periodic Table
+  fast_definition: false
+  quote_identifiers: '"'
+  case: mixed
+  insert_column: true
+  multi_insert: true
+  infer_types: true
+input: |-
+  Atomic Number,Symbol,Name,Weight
+  1,H,Hydrogen,1.008
+  2,He,Helium,4.0026
+  3,Li,Lithium,6.94
+outputs:
+  create_table: |
+    create table "Periodic Table" (
+     "Atomic Number" integer,
+     "symbol" character variying(2),
+     "name" character varying(8),
+     "weight" decimal
+    );
+  inserts: |
+    insert into "Periodic Table" ("Atomic Number", "symbol", "name", "weight") values 
+     (1, 'H', 'Hydrogen', 1.008),
+     (2, 'He', 'Helium', 4.0026),
+     (3, 'Li', 'Lithium', 6.94);
+infered_info:
+  - uno

@@ -28,7 +28,7 @@ class ArrayFactory implements OutWritterFactory{
 }
 
 class StringFactory extends ArrayFactory{
-    async end(){
+    override async end(){
         for(const name in this.arrays){
             const plain = this.arrays[name].filter(x => x != EOT).join('');
             // @ts-expect-error converting results to plain strig
@@ -46,7 +46,16 @@ describe("txt2sql unit test", function(){
             "data11|data12",
             "data21|O'Donnell",
         ];
-        const txt2sql = new Txt2Sql(arrayFactory);
+        const txt2sql = new Txt2Sql(arrayFactory, {
+            field_separator: '|',
+            table_name: 'table1',
+            insert_columns: true,
+            multi_insert: false,
+            quote_identifiers: '',
+            case: 'lower',
+            infer_types: false,
+            output_types: false
+        });
         await txt2sql.processStart();
         for(const line of inputLines){
             // eslint-disable-next-line no-await-in-loop
@@ -71,20 +80,29 @@ describe("txt2sql unit test", function(){
 });
 
 describe("txt2sql integratin tests", function(){
-    it("test simple-data fixture", async function(){
-        const fixtureYaml = await fs.readFile('../fixtures/simple-data.yaml', 'utf8');
-        const fixture = YAML.parse(fixtureYaml);
-        const stringFactory = new StringFactory();
-        const txt2sql = new Txt2Sql(stringFactory, fixture.options);
-        await txt2sql.processStart();
-        for(const line of fixture.input.split(/\r?\n/)){
-            // eslint-disable-next-line no-await-in-loop
-            await txt2sql.processLine(line);
-        }
-        await txt2sql.processEnd();
-        assert.deepEqual(
-            stringFactory.arrays,
-            fixture.outputs
-        );
-    })
+    const test = (path: string) => 
+        it("test fixture "+path, async function(){
+            const fixtureYaml = await fs.readFile(`../fixtures/${path}`, 'utf8');
+            const fixture = YAML.parse(fixtureYaml);
+            const stringFactory = new StringFactory();
+            const txt2sql = new Txt2Sql(stringFactory, fixture.options);
+            await txt2sql.processStart();
+            for(const line of fixture.input.split(/\r?\n/)){
+                // eslint-disable-next-line no-await-in-loop
+                await txt2sql.processLine(line);
+            }
+            await txt2sql.processEnd();
+            if(fixture.infered_info){
+                assert.deepEqual(
+                    txt2sql.inferedInfo(),
+                    fixture.infered_info
+                );
+            }
+            assert.deepEqual(
+                stringFactory.arrays,
+                fixture.outputs
+            );
+        });
+    test('simple-data.yaml');
+    test('infer-data-types.yaml');
 })

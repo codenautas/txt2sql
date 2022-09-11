@@ -4,6 +4,7 @@
         "alwaysStrict": true,
         "declaration": true,
         "lib": ["ES2022"],
+        "target": "ES2021",
         "module": "UMD",
         "moduleResolution": "node",
         "noImplicitAny": true,
@@ -11,6 +12,7 @@
         "strictFunctionTypes": true,
         "strictNullChecks": true,
         "strictPropertyInitialization": true,
-        "noStrictGenericChecks": true
+        "noStrictGenericChecks": true,
+        "noImplicitOverride": true
     }
 }
