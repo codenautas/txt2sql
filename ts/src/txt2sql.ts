@@ -57,6 +57,7 @@ export class FileWritterFactory implements OutWritterFactory{
 }
 
 abstract class TypeBase<T> {
+    abstract typeName:string
     abstract parseValue(rawValue:string):T|null
     abstract quoteValue(value:T):string
     // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-empty-function
@@ -97,7 +98,7 @@ class TypeInferer<T, T2 extends TypeBase<T>>{
 }
 
 class TypeProcessor<T, T2 extends TypeBase<T>>{
-    constructor(protected typer:T2, protected columnName:string){}
+    constructor(public typer:T2, public columnName:string){}
     processValue(rawValue:string|null, line:number):string{
         if(rawValue == null){
             return 'null';
@@ -118,6 +119,7 @@ type TypeConstructor = typeof TypeBase
 
 class StringType extends TypeBase<string>{
     maxLength = 0
+    get typeName(){ return this.maxLength ? `character varying(${this.maxLength})` : "text" }
     quoteValue(value: string): string {
         return "'" + value.replace(/'/g, "''") + "'";
     }
@@ -132,6 +134,7 @@ class StringType extends TypeBase<string>{
 class NumberType extends TypeBase<number>{
     protected hasDecimal = false
     protected rawDecimal = '.'
+    get typeName(){ return this.hasDecimal ? "decimal" : "bigint" }
     quoteValue(value: number): string {
         return value.toString();
     }
@@ -161,19 +164,10 @@ class SpanishNumberType extends NumberType{
     }
 }
 
-type ColumnInfoTypeRaw = {type_name: 'text', max_length: null}
-
-type ColumnInfoTypes = ColumnInfoTypeRaw
-
-type ColumnInfo = ColumnInfoTypes & {name:string}
-
-var rawColumninfo: ColumnInfoTypeRaw = {type_name:'text', max_length: null}
-
 enum Part { Body, Head }
 
 type Txt2SqlOpenedMembers = {
     columnProcessor: TypeProcessor<unknown, TypeBase<unknown>>[]
-    columnInfo: ColumnInfo[]
     create_table_raw: OutWritter
     inserts: OutWritter
     create_table?: OutWritter
@@ -214,7 +208,6 @@ export class Txt2Sql{
             case Status.New:
                 this.status = {
                     is: Status.Started,
-                    columnInfo: [],
                     columnProcessor: [],
                     create_table_raw: await this.owf.open('create_table_raw'),
                     inserts: await this.owf.open('inserts'),
@@ -241,7 +234,6 @@ export class Txt2Sql{
         for(let i = 0; i < rawNames.length; i++){
             const rawName = rawNames[i]
             const name =  this.getIdentifier(rawName);
-            this.status.columnInfo.push({name, ...rawColumninfo});
             this.status.columnProcessor.push(new TypeProcessor(new StringType(), name));
             this.columnInfering.push(this.typeConstructors().map(c =>new TypeInferer(createNew(c))));
         }
@@ -251,7 +243,7 @@ export class Txt2Sql{
         switch(esto.status.is){
             case Status.Started:
                 return "create table " + this.table_name + " (" + 
-                    esto.status.columnInfo.map(info => "\n " + info.name + " " + info.type_name).join(",") + 
+                    esto.status.columnProcessor.map(info => "\n " + info.columnName + " " + info.typer.typeName).join(",") + 
                 "\n);\n";
             default: throw Error("wrong status at createTableSql: "+this.status);
         }
@@ -277,7 +269,7 @@ export class Txt2Sql{
                         (!this.options.multi_insert || firstRow ?
                             "insert into " + this.table_name + (
                                 this.options.insert_columns ? " (" + 
-                                this.status.columnInfo.map(i=>i.name).join(", ") + 
+                                this.status.columnProcessor.map(i=>i.columnName).join(", ") + 
                                 ") " 
                                 : " "
                             ) + "values" + (this.options.multi_insert ? "\n " : " " ) : ",\n " 
@@ -295,17 +287,22 @@ export class Txt2Sql{
                 var file = await this.owf.open('create_table')
                 this.status.create_table = file
                 for(var i = 0; i < this.status.columnProcessor.length; i++){
+                    console.log('PAP 1 column', i);
                     var columnInfers = this.columnInfering[i]
                     var columnInfer: TypeInferer<unknown, TypeBase<unknown>> | undefined
                     do{
-                        columnInfer = columnInfers.pop()
+                        columnInfer = columnInfers.shift()
+                        console.log('PAP 2 columnInfer', columnInfer);
                     } while (columnInfer != null && columnInfer.hasInvalid)
                     if(columnInfer != null && !columnInfer.hasInvalid){
-                        var name = this.status.columnInfo[i].name
+                        var name = this.status.columnProcessor[i].columnName
                         var typer = columnInfer.typer
                         this.status.columnProcessor[i] = new TypeProcessor(typer, name)
+                        console.log('PAP 3 ', name, typer, this.status.columnProcessor[i]);
                     }
+                    console.log('PAP 4');
                 }
+                console.log('PAP 5');
                 file.write(this.createTableSql())
                 file.close()
             break;

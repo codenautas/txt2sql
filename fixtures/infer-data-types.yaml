@@ -22,13 +22,13 @@ outputs:
      ('3', 'Li', 'Lithium', '6.94');
   create_table: |
     create table "Periodic Table" (
-     "Atomic Number" integer,
-     "symbol" character variying(2),
-     "name" character varying(8),
-     "weight" decimal
+     "Atomic Number" bigint,
+     "Symbol" character varying(2),
+     "Name" character varying(8),
+     "Weight" decimal
     );
   inserts_typed: |
-    insert into "Periodic Table" ("Atomic Number", "symbol", "name", "weight") values 
+    insert into "Periodic Table" ("Atomic Number", "Symbol", "Name", "Weight") values 
      (1, 'H', 'Hydrogen', 1.008),
      (2, 'He', 'Helium', 4.0026),
      (3, 'Li', 'Lithium', 6.94);
