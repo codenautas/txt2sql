@@ -68,8 +68,8 @@ class TypeInferer<T, T2 extends TypeBase<T>>{
     minValue:T|null = null
     otherValues = false
     hasNull = false
-    hasInvalid = false
-    constructor(protected typer:T2){}
+    hasInvalid:boolean = false
+    constructor(public typer:T2){}
     inferValue(rawValue:string|null){
         if(this.hasInvalid) return;
         if(rawValue == null){
@@ -96,7 +96,7 @@ class TypeInferer<T, T2 extends TypeBase<T>>{
     }
 }
 
-class TypeProcesor<T, T2 extends TypeBase<T>>{
+class TypeProcessor<T, T2 extends TypeBase<T>>{
     constructor(protected typer:T2, protected columnName:string){}
     processValue(rawValue:string|null, line:number):string{
         if(rawValue == null){
@@ -113,7 +113,7 @@ class TypeProcesor<T, T2 extends TypeBase<T>>{
 export type Constructor<T> = new(...args: unknown[]) => T;
 export type AbstractConstructor<T> = abstract new(...args: unknown[]) => T;
 
-type TypeConstructor = typeof TypeBase<unknown>
+type TypeConstructor = typeof TypeBase
 // type TypeConstructor = Constructor<TypeBase<unknown>>
 
 class StringType extends TypeBase<string>{
@@ -153,6 +153,7 @@ const numberSignInverter = {'.':',', ',':'.'};
 
 class SpanishNumberType extends NumberType{
     constructor(){
+        super()
         this.rawDecimal = ','
     }
     override parseValue(rawValue: string): number | null {
@@ -160,13 +161,22 @@ class SpanishNumberType extends NumberType{
     }
 }
 
+type ColumnInfoTypeRaw = {type_name: 'text', max_length: null}
+
+type ColumnInfoTypes = ColumnInfoTypeRaw
+
+type ColumnInfo = ColumnInfoTypes & {name:string}
+
+var rawColumninfo: ColumnInfoTypeRaw = {type_name:'text', max_length: null}
+
 enum Part { Body, Head }
 
 type Txt2SqlOpenedMembers = {
-    columnNames: string[]
-    columnInfo: TypeProcesor<unknown, TypeBase<unknown>>[]
+    columnProcessor: TypeProcessor<unknown, TypeBase<unknown>>[]
+    columnInfo: ColumnInfo[]
+    create_table_raw: OutWritter
     inserts: OutWritter
-    create_table: OutWritter
+    create_table?: OutWritter
     part: Part
     rowNumber: number
 }
@@ -204,14 +214,16 @@ export class Txt2Sql{
             case Status.New:
                 this.status = {
                     is: Status.Started,
-                    columnNames: [],
                     columnInfo: [],
-                    create_table: await this.owf.open('create_table'),
+                    columnProcessor: [],
+                    create_table_raw: await this.owf.open('create_table_raw'),
                     inserts: await this.owf.open('inserts'),
                     part: Part.Head,
                     rowNumber: 0
                 }
-                this.columnInfering = []
+                if(this.options.infer_types){
+                    this.columnInfering = []
+                }
             break;
             default: throw Error("wrong status at process_end: "+this.status);
         }
@@ -228,10 +240,20 @@ export class Txt2Sql{
         if(this.status.is != Status.Started) throw new Error('cannot processColumns if not Started')
         for(let i = 0; i < rawNames.length; i++){
             const rawName = rawNames[i]
-            const columnName =  this.getIdentifier(rawName);
-            this.status.columnNames.push(columnName);
-            this.status.columnInfo.push(new TypeProcesor(new StringType(),this.status.columnNames[i]));
+            const name =  this.getIdentifier(rawName);
+            this.status.columnInfo.push({name, ...rawColumninfo});
+            this.status.columnProcessor.push(new TypeProcessor(new StringType(), name));
             this.columnInfering.push(this.typeConstructors().map(c =>new TypeInferer(createNew(c))));
+        }
+    }
+    createTableSql(){
+        var esto = this;
+        switch(esto.status.is){
+            case Status.Started:
+                return "create table " + this.table_name + " (" + 
+                    esto.status.columnInfo.map(info => "\n " + info.name + " " + info.type_name).join(",") + 
+                "\n);\n";
+            default: throw Error("wrong status at createTableSql: "+this.status);
         }
     }
     async processLine(line:string){
@@ -239,12 +261,8 @@ export class Txt2Sql{
             case Status.Started:
                 if(this.status.part == Part.Head){
                     this.processColumns(line.split(this.options.field_separator));
-                    await this.status.create_table.write(
-                        "create table " + this.table_name + " (" + 
-                        this.status.columnNames.map(x=>"\n " + x + " text").join(",") + 
-                        "\n);\n"
-                    );
-                    await this.status.create_table.close();
+                    await this.status.create_table_raw.write(this.createTableSql());
+                    await this.status.create_table_raw.close();
                     this.status.part = Part.Body;
                 }else{
                     const firstRow = !this.status.rowNumber;
@@ -257,30 +275,57 @@ export class Txt2Sql{
                     "')"
                     await this.status.inserts?.write(
                         (!this.options.multi_insert || firstRow ?
-                        "insert into " + this.table_name + (
-                            this.options.insert_columns ? " (" + 
-                            this.status.columnNames.join(", ") + 
-                            ") " 
-                            : " "
-                        ) + "values " : ",\n ") + dataLine + (this.options.multi_insert ? "" : ";\n")
+                            "insert into " + this.table_name + (
+                                this.options.insert_columns ? " (" + 
+                                this.status.columnInfo.map(i=>i.name).join(", ") + 
+                                ") " 
+                                : " "
+                            ) + "values" + (this.options.multi_insert ? "\n " : " " ) : ",\n " 
+                        ) + dataLine + (this.options.multi_insert ? "" : ";\n")
                     )
-                    this.status.rowNumber++;
+                    this.status.rowNumber++
                 }
             break;
             default: throw Error("wrong status at process_end: "+this.status);
+        }
+    }
+    async saveCreateTable(){
+        switch(this.status.is){
+            case Status.Started:
+                var file = await this.owf.open('create_table')
+                this.status.create_table = file
+                for(var i = 0; i < this.status.columnProcessor.length; i++){
+                    var columnInfers = this.columnInfering[i]
+                    var columnInfer: TypeInferer<unknown, TypeBase<unknown>> | undefined
+                    do{
+                        columnInfer = columnInfers.pop()
+                    } while (columnInfer != null && columnInfer.hasInvalid)
+                    if(columnInfer != null && !columnInfer.hasInvalid){
+                        var name = this.status.columnInfo[i].name
+                        var typer = columnInfer.typer
+                        this.status.columnProcessor[i] = new TypeProcessor(typer, name)
+                    }
+                }
+                file.write(this.createTableSql())
+                file.close()
+            break;
+            default: throw Error("wrong status at saveCreateTable: "+this.status)
         }
     }
     async processEnd(){
         switch(this.status.is){
             case Status.Started:
                 await this.status.inserts.close();
-                await this.owf.end();
+                if(this.options.infer_types){
+                    await this.saveCreateTable()
+                }
                 if(this.options.multi_insert){
                     await this.status.inserts?.write(";\n")
                 }
-                this.status = {is: Status.Done};
+                await this.owf.end();
+                this.status = {is: Status.Done}
             break;
-            default: throw Error("wrong status at process_end: "+this.status);
+            default: throw Error("wrong status at process_end: "+this.status)
         }
     }
     async processSmallFile(fileName:string){

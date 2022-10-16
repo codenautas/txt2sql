@@ -4,7 +4,7 @@ options:
   fast_definition: false
   quote_identifiers: '"'
   case: mixed
-  insert_column: true
+  insert_columns: true
   multi_insert: true
   infer_types: true
 input: |-
@@ -12,7 +12,14 @@ input: |-
   1,H,Hydrogen,1.008
   2,He,Helium,4.0026
   3,Li,Lithium,6.94
+do_not_check: 
+  - create_table_raw
 outputs:
+  inserts: |
+    insert into "Periodic Table" ("Atomic Number", "Symbol", "Name", "Weight") values
+     ('1', 'H', 'Hydrogen', '1.008'),
+     ('2', 'He', 'Helium', '4.0026'),
+     ('3', 'Li', 'Lithium', '6.94');
   create_table: |
     create table "Periodic Table" (
      "Atomic Number" integer,
@@ -20,10 +27,8 @@ outputs:
      "name" character varying(8),
      "weight" decimal
     );
-  inserts: |
+  inserts_typed: |
     insert into "Periodic Table" ("Atomic Number", "symbol", "name", "weight") values 
      (1, 'H', 'Hydrogen', 1.008),
      (2, 'He', 'Helium', 4.0026),
      (3, 'Li', 'Lithium', 6.94);
-infered_info:
-  - uno

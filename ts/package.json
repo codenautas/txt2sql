@@ -5,17 +5,18 @@
     "private": true,
     "private-why": "it is marked as private to not publish in npm for now",
     "dependencies": {
-        "typescript": "^4.7.4"
+        "typescript": "^4.8.4"
     },
     "devDependencies": {
-        "@types/mocha": "^9.1.1",
-        "@types/node": "^18.6.0",
-        "@typescript-eslint/eslint-plugin": "^5.32.0",
-        "@typescript-eslint/parser": "^5.32.0",
-        "eslint": "^8.21.0",
+        "@types/mocha": "^10.0.0",
+        "@types/node": "^18.8.3",
+        "@typescript-eslint/eslint-plugin": "^5.39.0",
+        "@typescript-eslint/parser": "^5.39.0",
+        "eslint": "^8.25.0",
         "js-yaml": "^4.1.0",
         "mocha": "^10.0.0",
-        "yaml": "^2.1.1"
+        "typescript": "~4.8.4",
+        "yaml": "^2.1.3"
     },
     "scripts": {
         "prepare": "tsc -p src",

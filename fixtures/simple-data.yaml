@@ -1,4 +1,4 @@
-options:
+options: 
   field_separator: ","
   table_name: periodic_table
   fast_definition: true
@@ -12,7 +12,7 @@ input: |-
   2,He,Helium,4.0026
   3,Li,Lithium,6.94
 outputs:
-  create_table: |
+  create_table_raw: |
     create table periodic_table (
      atomic_number text,
      symbol text,
